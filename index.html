@@ -7,23 +7,9 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
-        .loader {
-            border: 5px solid #f3f3f3;
-            border-top: 5px solid #3498db;
-            border-radius: 50%;
-            width: 50px;
-            height: 50px;
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        .accordion-content {
-            max-height: 0;
-            overflow: hidden;
-            transition: max-height 0.3s ease-out;
-        }
+        .loader { border: 5px solid #f3f3f3; border-top: 5px solid #3498db; border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .accordion-content { max-height: 0; overflow: hidden; transition: max-height 0.3s ease-out; }
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800">
@@ -90,18 +76,48 @@
             const employeeSizeSelect = document.getElementById('employee_size_select');
             employeeSizeData.forEach(size => { employeeSizeSelect.innerHTML += `<option value="${size}">${size}</option>`; });
             employeeSizeSelect.value = "100-149";
+
             const eventSelectionDiv = document.getElementById('event-selection');
+            let isFirstEvent = true;
+
             Object.entries(eventData).forEach(([eventCode, eventDetails]) => {
                 const eventItem = document.createElement('div');
                 eventItem.className = 'event-item border-b border-gray-200';
                 let servicesHtml = '';
-                Object.entries(eventDetails.services).forEach(([serviceCode, serviceName]) => { servicesHtml += `<div class="p-2"><label class="flex items-center"><input type="checkbox" class="h-4 w-4 rounded border-gray-300 text-blue-600 service-checkbox" data-service-code="${serviceCode}" checked><span class="ml-2 text-sm text-gray-700">${serviceName}</span></label></div>`; });
-                eventItem.innerHTML = `<div class="flex items-center p-2 cursor-pointer accordion-header"><span class="font-medium text-gray-800">${eventDetails.name}</span><i class="fas fa-chevron-down ml-auto transition-transform"></i></div><div class="accordion-content pl-4 bg-gray-50 rounded-b-lg">${servicesHtml}</div>`;
+                Object.entries(eventDetails.services).forEach(([serviceCode, serviceName]) => { servicesHtml += `<div class="p-2 pl-6"><label class="flex items-center"><input type="checkbox" class="h-4 w-4 rounded border-gray-300 text-blue-600 service-checkbox" data-service-code="${serviceCode}"><span class="ml-2 text-sm text-gray-700">${serviceName}</span></label></div>`; });
+
+                // --- CHANGE: Added a master checkbox for the event ---
+                eventItem.innerHTML = `
+                    <div class="flex items-center p-2 cursor-pointer accordion-header">
+                        <label class="flex items-center font-medium text-gray-800">
+                            <input type="checkbox" class="h-5 w-5 mr-3 rounded border-gray-400 text-blue-600 event-checkbox">
+                            ${eventDetails.name}
+                        </label>
+                        <i class="fas fa-chevron-down ml-auto transition-transform"></i>
+                    </div>
+                    <div class="accordion-content bg-gray-50 rounded-b-lg">${servicesHtml}</div>`;
                 eventSelectionDiv.appendChild(eventItem);
+
+                // --- CHANGE: Logic for the new event checkbox ---
+                const eventCheckbox = eventItem.querySelector('.event-checkbox');
+                const serviceCheckboxes = eventItem.querySelectorAll('.service-checkbox');
+                eventCheckbox.addEventListener('change', () => {
+                    serviceCheckboxes.forEach(cb => cb.checked = eventCheckbox.checked);
+                });
+
+                // --- CHANGE: Set the first event as the default selection ---
+                if (isFirstEvent) {
+                    eventCheckbox.checked = true;
+                    eventCheckbox.dispatchEvent(new Event('change')); // Trigger the change to check child services
+                    isFirstEvent = false;
+                }
             });
+
             document.getElementById('run-simulation').addEventListener('click', handleRunSimulation);
             document.querySelectorAll('.accordion-header').forEach(header => {
-                header.addEventListener('click', () => {
+                header.addEventListener('click', (e) => {
+                    // Prevent accordion from toggling when the checkbox/label is clicked
+                    if (e.target.type === 'checkbox' || e.target.tagName === 'LABEL' || e.target.parentElement.tagName === 'LABEL') return;
                     const content = header.nextElementSibling;
                     const icon = header.querySelector('i');
                     if (content.style.maxHeight) {
@@ -129,8 +145,16 @@
             try {
                 const response = await fetch('/api/main', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestData) });
                 if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+                    // Try to parse error from JSON, otherwise use status text
+                    let errorMsg = response.statusText;
+                    try {
+                        const errorData = await response.json();
+                        errorMsg = errorData.error || `HTTP error! status: ${response.status}`;
+                    } catch (e) {
+                       // This catch block will handle the "Unexpected token '<'" error gracefully
+                       errorMsg = `The server returned an invalid response (Not Found). Please ensure the API is running correctly.`;
+                    }
+                    throw new Error(errorMsg);
                 }
                 const results = await response.json();
                 displayResults(results);
@@ -149,7 +173,7 @@
             }
             resultsDiv.innerHTML = `<div class="overflow-x-auto"><table class="min-w-full bg-white border border-gray-200"><thead class="bg-gray-50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Metric</th><th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Value</th></tr></thead><tbody class="bg-white divide-y divide-gray-200"><tr><td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Mean Annual Pure Premium</td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-800 text-center font-mono">${results.mean_premium}</td></tr><tr><td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Volatility (CV)</td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-800 text-center font-mono">${results.volatility_cv}</td></tr><tr><td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Max-to-Mean Ratio</td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-800 text-center font-mono">${results.max_to_mean_ratio}</td></tr></tbody></table></div>`;
         }
-        
+
         function displayError(message) {
             const resultsDiv = document.getElementById("results-summary");
             resultsDiv.innerHTML = `<p class="text-red-600 font-bold">${message}</p>`;
