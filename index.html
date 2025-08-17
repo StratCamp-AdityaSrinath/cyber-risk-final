@@ -66,29 +66,27 @@
     </div>
 
     <script>
-        // --- Global variable to hold the data from the backend ---
-        let uiData = {};
+        const naicsData = { 52: "Finance and Insurance", 54: "Professional, Scientific, and Technical Services", 51: "Information", 62: "Health Care and Social Assistance", 22: "Utilities", 23: "Construction", 61: "Educational Services", 72: "Accommodation and Food Services" };
         const employeeSizeData = [ "<5", "5-9", "10-14", "15-19", "20-24", "25-29", "30-34", "35-39", "40-49", "50-74", "75-99", "100-149", "150-199", "200-299", "300-399", "400-499", "500-749", "750-999", "1,000-1,499", "1,500-1,999", "2,000-2,499", "2,500-4,999", "5,000+" ];
+        const eventData = { "EVT001": { name: "Ransomware Attack", services: { "SVC001": "Ransom Payment & Negotiation", "SVC002": "System Restoration & Data Recovery" } }, "EVT002": { name: "Data Breach (PII)", services: { "SVC003": "Forensic Investigation & Reporting", "SVC004": "Credit Monitoring for Affected Individuals" } }, "EVT003": { name: "Business Email Compromise", services: { "SVC005": "Fund Recovery & Legal Action" } }, "EVT004": { name: "Denial-of-Service (DDoS) Attack", services: { "SVC006": "DDoS Mitigation & Traffic Scrubbing" } }, "EVT005": { name: "Insider Threat", services: { "SVC007": "Internal Investigation & Legal Counsel" } }, "EVT006": { name: "Cloud Misconfiguration", services: { "SVC008": "Cloud Security Audit & Remediation" } } };
 
-        function updateEventSelection(selectedNaics) {
+        function setupFrontend() {
+            const naicsSelect = document.getElementById('naics_select');
+            Object.entries(naicsData).forEach(([code, name]) => { naicsSelect.innerHTML += `<option value="${code}">${name} (${code})</option>`; });
+            const employeeSizeSelect = document.getElementById('employee_size_select');
+            employeeSizeData.forEach(size => { employeeSizeSelect.innerHTML += `<option value="${size}">${size}</option>`; });
+            employeeSizeSelect.value = "100-149";
+
             const eventSelectionDiv = document.getElementById('event-selection');
-            eventSelectionDiv.innerHTML = ''; // Clear existing options
-
-            const industryData = uiData[selectedNaics];
-            if (!industryData || Object.keys(industryData.events).length === 0) {
-                 eventSelectionDiv.innerHTML = '<p class="text-gray-500 text-sm p-2">No specific events are applicable for this industry based on the provided data.</p>';
-                 return;
-            }
-
             let isFirstEvent = true;
-            Object.entries(industryData.events).forEach(([eventCode, eventDetails]) => {
+
+            Object.entries(eventData).forEach(([eventCode, eventDetails]) => {
                 const eventItem = document.createElement('div');
                 eventItem.className = 'event-item border-b border-gray-200';
                 let servicesHtml = '';
-                Object.entries(eventDetails.services).forEach(([serviceCode, serviceName]) => { 
-                    servicesHtml += `<div class="p-2 pl-6"><label class="flex items-center"><input type="checkbox" class="h-4 w-4 rounded border-gray-300 text-blue-600 service-checkbox" data-service-code="${serviceCode}"><span class="ml-2 text-sm text-gray-700">${serviceName}</span></label></div>`; 
-                });
-                
+                Object.entries(eventDetails.services).forEach(([serviceCode, serviceName]) => { servicesHtml += `<div class="p-2 pl-6"><label class="flex items-center"><input type="checkbox" class="h-4 w-4 rounded border-gray-300 text-blue-600 service-checkbox" data-service-code="${serviceCode}"><span class="ml-2 text-sm text-gray-700">${serviceName}</span></label></div>`; });
+
+                // --- CHANGE: Added a master checkbox for the event ---
                 eventItem.innerHTML = `
                     <div class="flex items-center p-2 cursor-pointer accordion-header">
                         <label class="flex items-center font-medium text-gray-800">
@@ -100,21 +98,25 @@
                     <div class="accordion-content bg-gray-50 rounded-b-lg">${servicesHtml}</div>`;
                 eventSelectionDiv.appendChild(eventItem);
 
+                // --- CHANGE: Logic for the new event checkbox ---
                 const eventCheckbox = eventItem.querySelector('.event-checkbox');
                 const serviceCheckboxes = eventItem.querySelectorAll('.service-checkbox');
                 eventCheckbox.addEventListener('change', () => {
                     serviceCheckboxes.forEach(cb => cb.checked = eventCheckbox.checked);
                 });
 
+                // --- CHANGE: Set the first event as the default selection ---
                 if (isFirstEvent) {
                     eventCheckbox.checked = true;
-                    eventCheckbox.dispatchEvent(new Event('change'));
+                    eventCheckbox.dispatchEvent(new Event('change')); // Trigger the change to check child services
                     isFirstEvent = false;
                 }
             });
 
+            document.getElementById('run-simulation').addEventListener('click', handleRunSimulation);
             document.querySelectorAll('.accordion-header').forEach(header => {
                 header.addEventListener('click', (e) => {
+                    // Prevent accordion from toggling when the checkbox/label is clicked
                     if (e.target.type === 'checkbox' || e.target.tagName === 'LABEL' || e.target.parentElement.tagName === 'LABEL') return;
                     const content = header.nextElementSibling;
                     const icon = header.querySelector('i');
@@ -127,39 +129,11 @@
                     }
                 });
             });
-        }
-        
-        async function setupFrontend() {
-            try {
-                const response = await fetch('/api/data');
-                if (!response.ok) throw new Error('Failed to load UI data from server.');
-                uiData = await response.json();
-            } catch (error) {
-                displayError(error.message);
-                return;
-            }
-
-            const naicsSelect = document.getElementById('naics_select');
-            Object.entries(uiData).forEach(([code, data]) => {
-                naicsSelect.innerHTML += `<option value="${code}">${data.name} (${code})</option>`;
-            });
-
-            const employeeSizeSelect = document.getElementById('employee_size_select');
-            employeeSizeData.forEach(size => { employeeSizeSelect.innerHTML += `<option value="${size}">${size}</option>`; });
-            employeeSizeSelect.value = "100-149";
-            
-            naicsSelect.addEventListener('change', (e) => {
-                updateEventSelection(e.target.value);
-            });
-
-            updateEventSelection(naicsSelect.value);
-
-            document.getElementById('run-simulation').addEventListener('click', handleRunSimulation);
             const deductibleSlider = document.getElementById('deductible');
             const deductibleValueSpan = document.getElementById('deductible_value');
             deductibleSlider.addEventListener('input', () => { deductibleValueSpan.innerText = parseInt(deductibleSlider.value).toLocaleString(); });
         }
-        
+
         async function handleRunSimulation() {
             document.getElementById('loader-container').classList.remove('hidden');
             document.getElementById('results-summary').innerHTML = "";
@@ -171,11 +145,13 @@
             try {
                 const response = await fetch('/api/main', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestData) });
                 if (!response.ok) {
+                    // Try to parse error from JSON, otherwise use status text
                     let errorMsg = response.statusText;
                     try {
                         const errorData = await response.json();
                         errorMsg = errorData.error || `HTTP error! status: ${response.status}`;
                     } catch (e) {
+                       // This catch block will handle the "Unexpected token '<'" error gracefully
                        errorMsg = `The server returned an invalid response (Not Found). Please ensure the API is running correctly.`;
                     }
                     throw new Error(errorMsg);
@@ -197,7 +173,7 @@
             }
             resultsDiv.innerHTML = `<div class="overflow-x-auto"><table class="min-w-full bg-white border border-gray-200"><thead class="bg-gray-50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Metric</th><th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Value</th></tr></thead><tbody class="bg-white divide-y divide-gray-200"><tr><td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Mean Annual Pure Premium</td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-800 text-center font-mono">${results.mean_premium}</td></tr><tr><td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Volatility (CV)</td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-800 text-center font-mono">${results.volatility_cv}</td></tr><tr><td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Max-to-Mean Ratio</td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-800 text-center font-mono">${results.max_to_mean_ratio}</td></tr></tbody></table></div>`;
         }
-        
+
         function displayError(message) {
             const resultsDiv = document.getElementById("results-summary");
             resultsDiv.innerHTML = `<p class="text-red-600 font-bold">${message}</p>`;
@@ -205,5 +181,5 @@
         }
         document.addEventListener("DOMContentLoaded", setupFrontend);
     </script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'97056c0e1c427e5a',t:'MTc1NTM5NDM5My4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>

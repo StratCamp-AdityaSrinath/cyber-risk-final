@@ -3,64 +3,43 @@ from flask_cors import CORS
 import pandas as pd
 import numpy as np
 from io import StringIO
-import json
-import os # Import os to create a reliable file path
+import sys
 
+# --- Flask App Initialization ---
 app = Flask(__name__)
 CORS(app)
 
-# --- CORRECTED DATA HANDLING ---
-# Build a reliable path to the data file within the same directory
-# This ensures Vercel can find the file.
-DATA_FILE_PATH = os.path.join(os.path.dirname(__file__), 'attributes.csv')
+# --- DATA: This is the new, complete data string ---
+CYBER_DATA_STRING = """
+NAICS,Event_Code,Service_Code,Event_Freq,Uptake_Prob,Cost
+52,EVT001,SVC001,0.088333,0.850000,77500
+52,EVT001,SVC002,0.088333,0.700000,122500
+52,EVT002,SVC003,0.055000,0.925000,255000
+52,EVT002,SVC004,0.055000,0.525000,155000
+54,EVT001,SVC001,0.120000,0.850000,70000
+54,EVT001,SVC002,0.120000,0.650000,110000
+54,EVT003,SVC005,0.080000,0.700000,300000
+51,EVT002,SVC003,0.070000,0.900000,270000
+51,EVT005,SVC007,0.030000,0.880000,550000
+62,EVT002,SVC003,0.060000,0.950000,260000
+62,EVT002,SVC004,0.060000,0.550000,160000
+62,EVT005,SVC007,0.020000,0.900000,500000
+22,EVT003,SVC005,0.090000,0.750000,320000
+22,EVT006,SVC008,0.030000,0.850000,450000
+23,EVT001,SVC001,0.070000,0.700000,60000
+23,EVT006,SVC008,0.040000,0.800000,400000
+61,EVT001,SVC001,0.080000,0.750000,65000
+61,EVT004,SVC006,0.100000,0.800000,180000
+72,EVT001,SVC001,0.068889,0.793889,240000
+72,EVT001,SVC002,0.068889,0.793889,240000
+72,EVT002,SVC003,0.068889,0.793889,240000
+72,EVT002,SVC004,0.068889,0.793889,240000
+72,EVT003,SVC005,0.068889,0.793889,240000
+72,EVT004,SVC006,0.068889,0.793889,240000
+72,EVT005,SVC007,0.068889,0.793889,240000
+72,EVT006,SVC008,0.068889,0.793889,240000
+"""
 
-def load_and_clean_data():
-    """Loads and cleans the source CSV data."""
-    try:
-        df = pd.read_csv(DATA_FILE_PATH)
-        df.columns = df.columns.str.strip()
-        df = df[pd.to_numeric(df['Industry NAICS'], errors='coerce').notna()]
-        df['Industry NAICS'] = df['Industry NAICS'].astype(int)
-        return df
-    except Exception as e:
-        print(f"Error loading data file: {e}")
-        return None
-
-def create_ui_data_structure(df):
-    """Creates the nested dictionary for the dynamic frontend."""
-    if df is None:
-        return {"error": "Source data could not be loaded."}
-    
-    # Dynamically create Event Codes from Event Names for internal use
-    unique_events = df['Event Name'].unique()
-    event_map = {name: f"EVT{i+1:03d}" for i, name in enumerate(unique_events)}
-    df['Event_Code'] = df['Event Name'].map(event_map)
-
-    frontend_naics_info = {
-        52: "Finance and Insurance", 54: "Professional, Scientific, and Technical Services",
-        51: "Information", 62: "Health Care and Social Assistance", 22: "Utilities",
-        23: "Construction", 61: "Educational Services", 72: "Accommodation and Food Services"
-    }
-
-    ui_structure = {}
-    for naics_code, naics_name in frontend_naics_info.items():
-        naics_df = df[df['Industry NAICS'] == naics_code]
-        # Always add the NAICS to the structure, even if it has no events
-        ui_structure[str(naics_code)] = {"name": naics_name, "events": {}}
-        if not naics_df.empty:
-            for event_name, group in naics_df.groupby('Event Name'):
-                event_code = group['Event_Code'].iloc[0]
-                ui_structure[str(naics_code)]["events"][event_code] = {
-                    "name": event_name,
-                    "services": dict(zip(group['Code'], group['Remedial Service Type']))
-                }
-    return ui_structure
-
-# --- GLOBAL DATA STRUCTURES ---
-SOURCE_DF = load_and_clean_data()
-UI_DATA_STRUCTURE = create_ui_data_structure(SOURCE_DF.copy() if SOURCE_DF is not None else None)
-
-# --- HELPER FUNCTIONS (FULL SIMULATION LOGIC RESTORED) ---
 EMPLOYEE_SIZE_SCALING_FACTORS = {
     "<5": 0.1, "5-9": 0.2, "10-14": 0.35, "15-19": 0.5, "20-24": 0.65,
     "25-29": 0.8, "30-34": 1.0, "35-39": 1.2, "40-49": 1.5, "50-74": 1.9,
@@ -69,6 +48,7 @@ EMPLOYEE_SIZE_SCALING_FACTORS = {
     "1,000-1,499": 12.0, "1,500-1,999": 14.0, "2,000-2,499": 16.0,
     "2,500-4,999": 18.0, "5,000+": 21.0
 }
+
 CATASTROPHIC_FREQUENCY = 0.15
 CATASTROPHIC_SEVERITY_SHAPE = 1.6
 CATASTROPHIC_SEVERITY_SCALE = 0.75
@@ -88,70 +68,63 @@ def compute_lognormal_params(mean_val, min_val, max_val):
         cv_approx = max(cv_approx, 0.2)
         sigma = np.sqrt(np.log(1 + cv_approx**2))
         mu = np.log(mean_val) - sigma**2 / 2
+        if sigma <= 0 or not np.isfinite(mu) or not np.isfinite(sigma):
+            return np.log(mean_val), 0.3
         return mu, sigma
     except (ValueError, ZeroDivisionError, TypeError):
         return np.log(mean_val) if mean_val > 0 else 0, 0.3
 
 def compute_beta_params(mean_val, min_val, max_val):
-    if (pd.isna(mean_val) or not (0 <= mean_val <= 1) or min_val >= max_val):
+    if (pd.isna(mean_val) or pd.isna(min_val) or pd.isna(max_val) or
+        not (0 <= mean_val <= 1) or min_val >= max_val or (max_val - min_val) < 1e-9):
         return 2.0, 2.0
     mean_val = np.clip(mean_val, min_val, max_val)
-    if (max_val - min_val) < 1e-9: return 2.0, 2.0
     mean_normalized = (mean_val - min_val) / (max_val - min_val)
-    if not (0 < mean_normalized < 1): return 2.0, 2.0
+    if not (0 < mean_normalized < 1):
+        return 2.0, 2.0
     variance_of_standard_beta = max((mean_normalized * (1 - mean_normalized))/6, 0.01)
     nu = (mean_normalized * (1 - mean_normalized) / variance_of_standard_beta) - 1
     if nu <= 0: return 2.0, 2.0
     alpha = mean_normalized * nu
     beta = (1 - mean_normalized) * nu
-    return max(alpha, 0.5), max(beta, 0.5)
-
-# --- API ENDPOINTS ---
-
-@app.route('/api/data', methods=['GET'])
-def get_ui_data():
-    """Provides the structured data needed to build the dynamic UI."""
-    if "error" in UI_DATA_STRUCTURE:
-        return jsonify(UI_DATA_STRUCTURE), 500
-    return jsonify(UI_DATA_STRUCTURE)
+    alpha = max(alpha, 0.5); beta = max(beta, 0.5)
+    return alpha, beta
 
 @app.route('/api/main', methods=['POST'])
 def handle_simulation():
-    if SOURCE_DF is None:
-        return jsonify({"error": "Server-side data file could not be loaded."}), 500
-
     data = request.get_json()
-    if not data: return jsonify({"error": "Invalid JSON request"}), 400
-    
+    if not data:
+        return jsonify({"error": "Invalid request. Please send a JSON body."}), 400
+
     naics = data.get('naics')
     employee_size = data.get('employee_size')
     deductible = data.get('deductible')
     selected_services = data.get('selected_services')
+
     if not all([naics, employee_size, deductible is not None, selected_services]):
-        return jsonify({"error": "Missing required parameters"}), 400
+        return jsonify({"error": "Missing one or more required parameters"}), 400
+
+    try:
+        naics_int = int(naics)  # Convert naics to integer safely
+    except (ValueError, TypeError):
+        return jsonify({"error": "Invalid NAICS code. Must be a valid integer."}), 400
 
     N_ITERATIONS = 1000
-    cyber_data = SOURCE_DF.copy()
+    cyber_data = pd.read_csv(StringIO(CYBER_DATA_STRING))
 
     filtered_data = cyber_data[
-        (cyber_data['Industry NAICS'] == int(naics)) &
-        (cyber_data['Code'].isin(selected_services))
+        (cyber_data['NAICS'] == naics_int) &
+        (cyber_data['Service_Code'].isin(selected_services))
     ].copy()
 
     if filtered_data.empty:
-        return jsonify({"error": "No data available for the selected services in this industry."}), 400
-    
-    # Use 2026 data as the baseline for the simulation
-    filtered_data['Event_Freq'] = filtered_data['Event_Freq_2026']
-    filtered_data['Uptake_Prob'] = filtered_data['Uptake_Prob_2026']
-    filtered_data['Cost'] = filtered_data['Cost_2026']
+        return jsonify({"error": "No data available for the selected industry and services."}), 400
 
-    # --- FULL SIMULATION LOGIC RESTORED ---
-    for metric in ['Event_Freq', 'Uptake_Prob', 'Cost']:
-        filtered_data[f'{metric}_Min'] = filtered_data[metric] * 0.7
-        filtered_data[f'{metric}_Max'] = filtered_data[metric] * 1.3
-    filtered_data['Uptake_Prob_Min'] = filtered_data['Uptake_Prob_Min'].clip(0, 1)
-    filtered_data['Uptake_Prob_Max'] = filtered_data['Uptake_Prob_Max'].clip(0, 1)
+    for metric in ['Event_Freq', 'Cost']:
+        filtered_data[f'{metric}_Min'] = filtered_data[metric] * (0.7 if metric == 'Cost' else 0.6)
+        filtered_data[f'{metric}_Max'] = filtered_data[metric] * (2.0 if metric == 'Cost' else 1.4)
+    filtered_data['Uptake_Prob_Min'] = filtered_data['Uptake_Prob'].clip(0, 1) * 0.6
+    filtered_data['Uptake_Prob_Max'] = filtered_data['Uptake_Prob'].clip(0, 1) * 1.4
 
     for metric in ['Event_Freq', 'Cost']:
         params = np.array([compute_lognormal_params(r[f'{metric}'], r[f'{metric}_Min'], r[f'{metric}_Max']) for _, r in filtered_data.iterrows()])
@@ -159,11 +132,12 @@ def handle_simulation():
             filtered_data[f'{metric}_mu'] = params[:, 0]
             filtered_data[f'{metric}_sigma'] = params[:, 1]
 
+    # Fix: Compute beta parameters for Uptake_Prob explicitly
     beta_params = np.array([compute_beta_params(r['Uptake_Prob'], r['Uptake_Prob_Min'], r['Uptake_Prob_Max']) for _, r in filtered_data.iterrows()])
     if beta_params.size > 0:
-        filtered_data[f'{metric}_alpha'] = beta_params[:, 0]
-        filtered_data[f'{metric}_beta'] = beta_params[:, 1]
-    
+        filtered_data['Uptake_Prob_alpha'] = beta_params[:, 0]
+        filtered_data['Uptake_Prob_beta'] = beta_params[:, 1]
+
     size_scaling_factor = EMPLOYEE_SIZE_SCALING_FACTORS.get(employee_size, 1.0)
     simulated_loss_per_firm = np.zeros(N_ITERATIONS)
 
