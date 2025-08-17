@@ -96,26 +96,27 @@ def handle_simulation():
     if not all([naics, employee_size, deductible is not None, selected_services]):
         return jsonify({"error": "Missing one or more required parameters"}), 400
 
+    try:
+        naics_int = int(naics)  # Convert naics to integer safely
+    except (ValueError, TypeError):
+        return jsonify({"error": "Invalid NAICS code. Must be a valid integer."}), 400
+
     N_ITERATIONS = 1000
     cyber_data = pd.read_csv(StringIO(CYBER_DATA_STRING))
 
     filtered_data = cyber_data[
-        (cyber_data['NAICS'] == int(naics)) &
+        (cyber_data['NAICS'] == naics_int) &
         (cyber_data['Service_Code'].isin(selected_services))
     ].copy()
 
     if filtered_data.empty:
-        return jsonify({"error": "No data available for the selected industry and services."})
+        return jsonify({"error": "No data available for the selected industry and services."}), 400
 
-    for metric in ['Event_Freq', 'Uptake_Prob', 'Cost']:
-        if metric == 'Cost':
-            filtered_data[f'{metric}_Min'] = filtered_data[metric] * 0.7
-            filtered_data[f'{metric}_Max'] = filtered_data[metric] * 2.0
-        else:
-            filtered_data[f'{metric}_Min'] = filtered_data[metric] * 0.6
-            filtered_data[f'{metric}_Max'] = filtered_data[metric] * 1.4
-    filtered_data['Uptake_Prob_Min'] = filtered_data['Uptake_Prob_Min'].clip(0, 1)
-    filtered_data['Uptake_Prob_Max'] = filtered_data['Uptake_Prob_Max'].clip(0, 1)
+    for metric in ['Event_Freq', 'Cost']:
+        filtered_data[f'{metric}_Min'] = filtered_data[metric] * (0.7 if metric == 'Cost' else 0.6)
+        filtered_data[f'{metric}_Max'] = filtered_data[metric] * (2.0 if metric == 'Cost' else 1.4)
+    filtered_data['Uptake_Prob_Min'] = filtered_data['Uptake_Prob'].clip(0, 1) * 0.6
+    filtered_data['Uptake_Prob_Max'] = filtered_data['Uptake_Prob'].clip(0, 1) * 1.4
 
     for metric in ['Event_Freq', 'Cost']:
         params = np.array([compute_lognormal_params(r[f'{metric}'], r[f'{metric}_Min'], r[f'{metric}_Max']) for _, r in filtered_data.iterrows()])
@@ -123,10 +124,11 @@ def handle_simulation():
             filtered_data[f'{metric}_mu'] = params[:, 0]
             filtered_data[f'{metric}_sigma'] = params[:, 1]
 
+    # Fix: Compute beta parameters for Uptake_Prob explicitly
     beta_params = np.array([compute_beta_params(r['Uptake_Prob'], r['Uptake_Prob_Min'], r['Uptake_Prob_Max']) for _, r in filtered_data.iterrows()])
     if beta_params.size > 0:
-        filtered_data[f'{metric}_alpha'] = beta_params[:, 0]
-        filtered_data[f'{metric}_beta'] = beta_params[:, 1]
+        filtered_data['Uptake_Prob_alpha'] = beta_params[:, 0]
+        filtered_data['Uptake_Prob_beta'] = beta_params[:, 1]
 
     size_scaling_factor = EMPLOYEE_SIZE_SCALING_FACTORS.get(employee_size, 1.0)
     simulated_loss_per_firm = np.zeros(N_ITERATIONS)
