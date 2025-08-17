@@ -9,27 +9,35 @@ import sys
 app = Flask(__name__)
 CORS(app)
 
-# --- DATA ---
+# --- DATA: This is the new, complete data string ---
 CYBER_DATA_STRING = """
 NAICS,Event_Code,Service_Code,Event_Freq,Uptake_Prob,Cost
-52,EVT001,SVC001,0.15,0.8,75000
-52,EVT001,SVC002,0.15,0.6,120000
-52,EVT002,SVC003,0.05,0.9,250000
-52,EVT002,SVC004,0.05,0.5,150000
-54,EVT001,SVC001,0.12,0.85,70000
-54,EVT001,SVC002,0.12,0.65,110000
-54,EVT003,SVC005,0.08,0.7,300000
-61,EVT001,SVC001,0.08,0.75,65000
-61,EVT004,SVC006,0.1,0.8,180000
-62,EVT002,SVC003,0.06,0.95,260000
-62,EVT002,SVC004,0.06,0.55,160000
-62,EVT005,SVC007,0.02,0.9,500000
-22,EVT003,SVC005,0.09,0.75,320000
-22,EVT006,SVC008,0.03,0.85,450000
-23,EVT001,SVC001,0.07,0.7,60000
-23,EVT006,SVC008,0.04,0.8,400000
-51,EVT002,SVC003,0.07,0.9,270000
-51,EVT005,SVC007,0.03,0.88,550000
+52,EVT001,SVC001,0.088333,0.850000,77500
+52,EVT001,SVC002,0.088333,0.700000,122500
+52,EVT002,SVC003,0.055000,0.925000,255000
+52,EVT002,SVC004,0.055000,0.525000,155000
+54,EVT001,SVC001,0.120000,0.850000,70000
+54,EVT001,SVC002,0.120000,0.650000,110000
+54,EVT003,SVC005,0.080000,0.700000,300000
+51,EVT002,SVC003,0.070000,0.900000,270000
+51,EVT005,SVC007,0.030000,0.880000,550000
+62,EVT002,SVC003,0.060000,0.950000,260000
+62,EVT002,SVC004,0.060000,0.550000,160000
+62,EVT005,SVC007,0.020000,0.900000,500000
+22,EVT003,SVC005,0.090000,0.750000,320000
+22,EVT006,SVC008,0.030000,0.850000,450000
+23,EVT001,SVC001,0.070000,0.700000,60000
+23,EVT006,SVC008,0.040000,0.800000,400000
+61,EVT001,SVC001,0.080000,0.750000,65000
+61,EVT004,SVC006,0.100000,0.800000,180000
+72,EVT001,SVC001,0.068889,0.793889,240000
+72,EVT001,SVC002,0.068889,0.793889,240000
+72,EVT002,SVC003,0.068889,0.793889,240000
+72,EVT002,SVC004,0.068889,0.793889,240000
+72,EVT003,SVC005,0.068889,0.793889,240000
+72,EVT004,SVC006,0.068889,0.793889,240000
+72,EVT005,SVC007,0.068889,0.793889,240000
+72,EVT006,SVC008,0.068889,0.793889,240000
 """
 
 EMPLOYEE_SIZE_SCALING_FACTORS = {
@@ -96,27 +104,26 @@ def handle_simulation():
     if not all([naics, employee_size, deductible is not None, selected_services]):
         return jsonify({"error": "Missing one or more required parameters"}), 400
 
-    try:
-        naics_int = int(naics)  # Convert naics to integer safely
-    except (ValueError, TypeError):
-        return jsonify({"error": "Invalid NAICS code. Must be a valid integer."}), 400
-
     N_ITERATIONS = 1000
     cyber_data = pd.read_csv(StringIO(CYBER_DATA_STRING))
 
     filtered_data = cyber_data[
-        (cyber_data['NAICS'] == naics_int) &
+        (cyber_data['NAICS'] == int(naics)) &
         (cyber_data['Service_Code'].isin(selected_services))
     ].copy()
 
     if filtered_data.empty:
-        return jsonify({"error": "No data available for the selected industry and services."}), 400
+        return jsonify({"error": "No data available for the selected industry and services."})
 
-    for metric in ['Event_Freq', 'Cost']:
-        filtered_data[f'{metric}_Min'] = filtered_data[metric] * (0.7 if metric == 'Cost' else 0.6)
-        filtered_data[f'{metric}_Max'] = filtered_data[metric] * (2.0 if metric == 'Cost' else 1.4)
-    filtered_data['Uptake_Prob_Min'] = filtered_data['Uptake_Prob'].clip(0, 1) * 0.6
-    filtered_data['Uptake_Prob_Max'] = filtered_data['Uptake_Prob'].clip(0, 1) * 1.4
+    for metric in ['Event_Freq', 'Uptake_Prob', 'Cost']:
+        if metric == 'Cost':
+            filtered_data[f'{metric}_Min'] = filtered_data[metric] * 0.7
+            filtered_data[f'{metric}_Max'] = filtered_data[metric] * 2.0
+        else:
+            filtered_data[f'{metric}_Min'] = filtered_data[metric] * 0.6
+            filtered_data[f'{metric}_Max'] = filtered_data[metric] * 1.4
+    filtered_data['Uptake_Prob_Min'] = filtered_data['Uptake_Prob_Min'].clip(0, 1)
+    filtered_data['Uptake_Prob_Max'] = filtered_data['Uptake_Prob_Max'].clip(0, 1)
 
     for metric in ['Event_Freq', 'Cost']:
         params = np.array([compute_lognormal_params(r[f'{metric}'], r[f'{metric}_Min'], r[f'{metric}_Max']) for _, r in filtered_data.iterrows()])
@@ -124,11 +131,10 @@ def handle_simulation():
             filtered_data[f'{metric}_mu'] = params[:, 0]
             filtered_data[f'{metric}_sigma'] = params[:, 1]
 
-    # Fix: Compute beta parameters for Uptake_Prob explicitly
     beta_params = np.array([compute_beta_params(r['Uptake_Prob'], r['Uptake_Prob_Min'], r['Uptake_Prob_Max']) for _, r in filtered_data.iterrows()])
     if beta_params.size > 0:
-        filtered_data['Uptake_Prob_alpha'] = beta_params[:, 0]
-        filtered_data['Uptake_Prob_beta'] = beta_params[:, 1]
+        filtered_data[f'{metric}_alpha'] = beta_params[:, 0]
+        filtered_data[f'{metric}_beta'] = beta_params[:, 1]
 
     size_scaling_factor = EMPLOYEE_SIZE_SCALING_FACTORS.get(employee_size, 1.0)
     simulated_loss_per_firm = np.zeros(N_ITERATIONS)
