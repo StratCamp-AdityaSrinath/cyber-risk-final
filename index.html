@@ -36,12 +36,14 @@
                         <label for="deductible" class="block text-lg font-semibold text-gray-700">Per-Business Deductible ($<span id="deductible_value">50,000</span>)</label>
                         <input type="range" id="deductible" min="0" max="250000" step="25000" value="50000" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
                     </div>
-
                     <div>
                         <label for="catastrophe_outlook" class="block text-lg font-semibold text-gray-700">Catastrophe Outlook (<span id="catastrophe_outlook_value">Moderate</span>)</label>
                         <input type="range" id="catastrophe_outlook" min="1" max="3" step="1" value="2" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
                     </div>
-                    
+                    <div>
+                        <label for="gross_up_factor" class="block text-lg font-semibold text-gray-700">Premium Gross-Up (Loss Ratio: <span id="gross_up_value">55</span>%)</label>
+                        <input type="range" id="gross_up_factor" min="45" max="65" step="1" value="55" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+                    </div>
                 </div>
 
                 <div class="mt-8">
@@ -59,12 +61,12 @@
             <div class="lg:col-span-2 bg-white p-6 rounded-2xl shadow-lg">
                 <h2 class="text-2xl font-bold mb-6 border-b pb-3">Simulation Results</h2>
                 <div id="results-container" class="text-center">
-                     <div class="flex justify-center items-center h-full hidden" id="loader-container">
-                          <div class="loader"></div>
-                          <p class="ml-4 text-gray-600 font-semibold">Running Simulation...</p>
-                     </div>
+                    <div class="flex justify-center items-center h-full hidden" id="loader-container">
+                        <div class="loader"></div>
+                        <p class="ml-4 text-gray-600 font-semibold">Running Simulation...</p>
+                    </div>
                     <div id="results-summary">
-                         <p class="text-gray-500">Adjust controls and click "Run Simulation" to see results.</p>
+                        <p class="text-gray-500">Adjust controls and click "Run Simulation" to see results.</p>
                     </div>
                 </div>
             </div>
@@ -73,128 +75,18 @@
 
     <script>
         const naicsData = {
-            51: "Information",
-            52: "Finance and Insurance",
-            54: "Professional, Scientific, and Technical Services",
-            22: "Utilities",
-            23: "Construction",
-            61: "Educational Services",
-            62: "Health Care and Social Assistance",
-            71: "Arts, Entertainment, and Recreation",
-            72: "Accommodation and Food Services",
-            81: "Other Services",
+            51: "Information", 52: "Finance and Insurance", 54: "Professional, Scientific, and Technical Services",
+            22: "Utilities", 23: "Construction", 61: "Educational Services", 62: "Health Care and Social Assistance",
+            71: "Arts, Entertainment, and Recreation", 72: "Accommodation and Food Services", 81: "Other Services",
             92: "Public Administration"
         };
-
         const employeeSizeData = [
-            "<5", "5-9", "10-14", "15-19", "20-24", "25-29", "30-34", "35-39", "40-49",
-            "50-74", "75-99", "100-149", "150-199", "200-299", "300-399", "400-499",
-            "500-749", "750-999", "1,000-1,499", "1,500-1,999", "2,000-2,499", "2,500-4,999", "5,000+"
+            "<5", "5-9", "10-14", "15-19", "20-24", "25-29", "30-34", "35-39", "40-49", "50-74", "75-99",
+            "100-149", "150-199", "200-299", "300-399", "400-499", "500-749", "750-999", "1,000-1,499",
+            "1,500-1,999", "2,000-2,499", "2,500-4,999", "5,000+"
         ];
-
         const eventData = {
-            "CM.01": { name: "Cloud Misconfiguration Leading to Massive Breach", services: {
-                "Forensics": "Config Audits, Exfiltration Tracing",
-                "Legal Support": "Other Legal Support for Breach Notifications, Fines (e.g., GDPR)",
-                "Negotiation": "Negotiations for Breach Notifications, Fines (e.g., GDPR)",
-                "Recovery": "Reconfigure, Data Restoration"
-            }, naics: ["51", "23"] },
-            "ZD.01": { name: "Zero-Day Exploit in Niche Software", services: {
-                "Forensics": "Exploit Reverse Engineering, Vuln Hunting",
-                "Legal Support": "Other Legal Support for Vendor Disputes, Breach Reporting",
-                "Negotiation": "Negotiations for Vendor Disputes, Breach Reporting",
-                "Recovery": "Custom Patching, System Scans"
-            }, naics: ["51", "23"] },
-            "FI.01": { name: "FIMI/Disinformation Campaign (AI-Generated)", services: {
-                "Forensics": "Content Authenticity Analysis, Source Tracing",
-                "Legal Support": "Other Legal Support for Defamation Lawsuits, Regulatory Filings",
-                "Negotiation": "Negotiations for Defamation Lawsuits, Regulatory Filings",
-                "Recovery": "Public Relations Campaigns, Content Takedowns"
-            }, naics: ["51", "52", "92"] },
-            "EC.01": { name: "Edge Computing Exploit (Zero-Day in Distributed Systems)", services: {
-                "Forensics": "Edge Network Logs, Exploit Reconstruction",
-                "Legal Support": "Other Legal Support for Compliance with Data Protection Laws",
-                "Negotiation": "Negotiations for Compliance with Data Protection Laws",
-                "Recovery": "Firmware Updates, Edge Reconfiguration"
-            }, naics: ["51"] },
-            "SB.01": { name: "Satellite/5G Backhaul Sabotage", services: {
-                "Forensics": "Signal Interference Analysis, Attacker Attribution",
-                "Legal Support": "Other Legal Support for International Space Law, FCC Compliance",
-                "Negotiation": "Negotiations for International Space Law, FCC Compliance",
-                "Recovery": "Backup Networks, Signal Hardening"
-            }, naics: ["51", "22"] },
-            "VR.01": { name: "VR/AR Metaverse Hijacking", services: {
-                "Forensics": "Session Logs, Immersion Exploit Tracing",
-                "Legal Support": "Other Legal Support for Privacy/Safety Lawsuits, Compliance",
-                "Negotiation": "Negotiations for Privacy/Safety Lawsuits, Compliance",
-                "Recovery": "Platform Patches, User Authentication Upgrades"
-            }, naics: ["51", "54", "71"] },
-            "AI.01": { name: "AI-Driven Deepfake Fraud (Executive Impersonation)", services: {
-                "Forensics": "Analyze Audio/Video Artifacts, Trace Fraud Trails",
-                "Legal Support": "Other Legal Support for Fraud Claims, Regulatory Probes",
-                "Negotiation": "Negotiations for Fraud Claims, Regulatory Probes",
-                "Recovery": "Retrain Staff, Implement Verification, Recover Funds"
-            }, naics: ["52", "71"] },
-            "QC.01": { name: "Quantum Computing Crypto Break", services: {
-                "Forensics": "Quantum-Resistant Analysis, Breach Tracing",
-                "Legal Support": "Other Legal Support for Data Protection Lawsuits, Regulatory Audits",
-                "Negotiation": "Negotiations for Data Protection Lawsuits, Regulatory Audits",
-                "Recovery": "Migrate to Quantum-Safe Crypto"
-            }, naics: ["52"] },
-            "BC.01": { name: "Blockchain/Crypto-Jacking in DeFi", services: {
-                "Forensics": "Blockchain Transaction Tracing",
-                "Legal Support": "Other Legal Support for Crypto Recovery Lawsuits, SEC Compliance",
-                "Negotiation": "Negotiations for Crypto Recovery Lawsuits, SEC Compliance",
-                "Recovery": "Protocol Forks, Fund Reimbursements"
-            }, naics: ["52", "23"] },
-            "BD.01": { name: "Biometric Data Theft (Deep Learning Bypass)", services: {
-                "Forensics": "Biometric Artifact Analysis, Theft Tracing",
-                "Legal Support": "Other Legal Support for Privacy Lawsuits, Compliance (e.g., CCPA)",
-                "Negotiation": "Negotiations for Privacy Lawsuits, Compliance (e.g., CCPA)",
-                "Recovery": "Multi-Factor Upgrades, Data Purging"
-            }, naics: ["52", "62", "92"] },
-            "AM.01": { name: "AI Model Poisoning Attack", services: {
-                "Forensics": "Data/Input Analysis for Poison Detection",
-                "Legal Support": "Other Legal Support for IP/Data Integrity Lawsuits",
-                "Negotiation": "Negotiations for IP/Data Integrity Lawsuits",
-                "Recovery": "Model Retraining, Clean Data Sourcing"
-            }, naics: ["54", "61", "71"] },
-            "DF.01": { name: "Deepfake-Enabled Insider Threat Amplification", services: {
-                "Forensics": "Insider Behavior Forensics, Deepfake Validation",
-                "Legal Support": "Other Legal Support for Internal Investigations, HR/Legal Reviews",
-                "Negotiation": "Negotiations for Internal Investigations, HR/Legal Reviews",
-                "Recovery": "Access Revokes, AI Monitoring Tools"
-            }, naics: ["54", "72"] },
-            "CP.01": { name: "Cryptojacking Malware", services: {
-                "Forensics": "Malware Analysis, Attribution",
-                "Legal Support": "Other Legal Support for Legal Action Against Perpetrators",
-                "Negotiation": "Negotiation with Attackers",
-                "Recovery": "System Cleanup, Security Upgrades"
-            }, naics: ["22"] },
-            "SC.01": { name: "Supply Chain Attack", services: {
-                "Forensics": "Attack Vector Analysis, Vendor Tracing",
-                "Legal Support": "Vendor Liability Lawsuits",
-                "Negotiation": "Vendor Liability Negotiations",
-                "Recovery": "Supply Chain Reconfiguration"
-            }, naics: ["23"] },
-            "RN.01": { name: "Ransomware Attack", services: {
-                "Forensics": "Ransomware Analysis, Attribution",
-                "Legal Support": "Regulatory Compliance, Fines",
-                "Negotiation": "Ransom Negotiation",
-                "Recovery": "Data Recovery, System Restoration"
-            }, naics: ["62"] },
-            "AP.01": { name: "API Exploitation", services: {
-                "Forensics": "API Traffic Analysis, Exploit Tracing",
-                "Legal Support": "Data Breach Lawsuits",
-                "Negotiation": "Data Breach Settlements",
-                "Recovery": "API Security Hardening"
-            }, naics: ["22", "81"] },
-            "IO.01": { name: "IoT Device Compromise", services: {
-                "Forensics": "Device Log Analysis, Compromise Tracing",
-                "Legal Support": "Liability and Privacy Lawsuits",
-                "Negotiation": "Liability Settlements",
-                "Recovery": "Device Firmware Updates, Network Isolation"
-            }, naics: ["72"] }
+            "CM.01":{name:"Cloud Misconfiguration Leading to Massive Breach",services:{Forensics:"Config Audits, Exfiltration Tracing","Legal Support":"Other Legal Support for Breach Notifications, Fines (e.g., GDPR)",Negotiation:"Negotiations for Breach Notifications, Fines (e.g., GDPR)",Recovery:"Reconfigure, Data Restoration"},naics:["51","23"]},"ZD.01":{name:"Zero-Day Exploit in Niche Software",services:{Forensics:"Exploit Reverse Engineering, Vuln Hunting","Legal Support":"Other Legal Support for Vendor Disputes, Breach Reporting",Negotiation:"Negotiations for Vendor Disputes, Breach Reporting",Recovery:"Custom Patching, System Scans"},naics:["51","23"]},"FI.01":{name:"FIMI/Disinformation Campaign (AI-Generated)",services:{Forensics:"Content Authenticity Analysis, Source Tracing","Legal Support":"Other Legal Support for Defamation Lawsuits, Regulatory Filings",Negotiation:"Negotiations for Defamation Lawsuits, Regulatory Filings",Recovery:"Public Relations Campaigns, Content Takedowns"},naics:["51","52","92"]},"EC.01":{name:"Edge Computing Exploit (Zero-Day in Distributed Systems)",services:{Forensics:"Edge Network Logs, Exploit Reconstruction","Legal Support":"Other Legal Support for Compliance with Data Protection Laws",Negotiation:"Negotiations for Compliance with Data Protection Laws",Recovery:"Firmware Updates, Edge Reconfiguration"},naics:["51"]},"SB.01":{name:"Satellite/5G Backhaul Sabotage",services:{Forensics:"Signal Interference Analysis, Attacker Attribution","Legal Support":"Other Legal Support for International Space Law, FCC Compliance",Negotiation:"Negotiations for International Space Law, FCC Compliance",Recovery:"Backup Networks, Signal Hardening"},naics:["51","22"]},"VR.01":{name:"VR/AR Metaverse Hijacking",services:{Forensics:"Session Logs, Immersion Exploit Tracing","Legal Support":"Other Legal Support for Privacy/Safety Lawsuits, Compliance",Negotiation:"Negotiations for Privacy/Safety Lawsuits, Compliance",Recovery:"Platform Patches, User Authentication Upgrades"},naics:["51","54","71"]},"AI.01":{name:"AI-Driven Deepfake Fraud (Executive Impersonation)",services:{Forensics:"Analyze Audio/Video Artifacts, Trace Fraud Trails","Legal Support":"Other Legal Support for Fraud Claims, Regulatory Probes",Negotiation:"Negotiations for Fraud Claims, Regulatory Probes",Recovery:"Retrain Staff, Implement Verification, Recover Funds"},naics:["52","71"]},"QC.01":{name:"Quantum Computing Crypto Break",services:{Forensics:"Quantum-Resistant Analysis, Breach Tracing","Legal Support":"Other Legal Support for Data Protection Lawsuits, Regulatory Audits",Negotiation:"Negotiations for Data Protection Lawsuits, Regulatory Audits",Recovery:"Migrate to Quantum-Safe Crypto"},naics:["52"]},"BC.01":{name:"Blockchain/Crypto-Jacking in DeFi",services:{Forensics:"Blockchain Transaction Tracing","Legal Support":"Other Legal Support for Crypto Recovery Lawsuits, SEC Compliance",Negotiation:"Negotiations for Crypto Recovery Lawsuits, SEC Compliance",Recovery:"Protocol Forks, Fund Reimbursements"},naics:["52","23"]},"BD.01":{name:"Biometric Data Theft (Deep Learning Bypass)",services:{Forensics:"Biometric Artifact Analysis, Theft Tracing","Legal Support":"Other Legal Support for Privacy Lawsuits, Compliance (e.g., CCPA)",Negotiation:"Negotiations for Privacy Lawsuits, Compliance (e.g., CCPA)",Recovery:"Multi-Factor Upgrades, Data Purging"},naics:["52","62","92"]},"AM.01":{name:"AI Model Poisoning Attack",services:{Forensics:"Data/Input Analysis for Poison Detection","Legal Support":"Other Legal Support for IP/Data Integrity Lawsuits",Negotiation:"Negotiations for IP/Data Integrity Lawsuits",Recovery:"Model Retraining, Clean Data Sourcing"},naics:["54","61","71"]},"DF.01":{name:"Deepfake-Enabled Insider Threat Amplification",services:{Forensics:"Insider Behavior Forensics, Deepfake Validation","Legal Support":"Other Legal Support for Internal Investigations, HR/Legal Reviews",Negotiation:"Negotiations for Internal Investigations, HR/Legal Reviews",Recovery:"Access Revokes, AI Monitoring Tools"},naics:["54","72"]},"CP.01":{name:"Cryptojacking Malware",services:{Forensics:"Malware Analysis, Attribution","Legal Support":"Other Legal Support for Legal Action Against Perpetrators",Negotiation:"Negotiation with Attackers",Recovery:"System Cleanup, Security Upgrades"},naics:["22"]},"SC.01":{name:"Supply Chain Attack",services:{Forensics:"Attack Vector Analysis, Vendor Tracing","Legal Support":"Vendor Liability Lawsuits",Negotiation:"Vendor Liability Negotiations",Recovery:"Supply Chain Reconfiguration"},naics:["23"]},"RN.01":{name:"Ransomware Attack",services:{Forensics:"Ransomware Analysis, Attribution","Legal Support":"Regulatory Compliance, Fines",Negotiation:"Ransom Negotiation",Recovery:"Data Recovery, System Restoration"},naics:["62"]},"AP.01":{name:"API Exploitation",services:{Forensics:"API Traffic Analysis, Exploit Tracing","Legal Support":"Data Breach Lawsuits",Negotiation:"Data Breach Settlements",Recovery:"API Security Hardening"},naics:["22","81"]},"IO.01":{name:"IoT Device Compromise",services:{Forensics:"Device Log Analysis, Compromise Tracing","Legal Support":"Liability and Privacy Lawsuits",Negotiation:"Liability Settlements",Recovery:"Device Firmware Updates, Network Isolation"},naics:["72"]}
         };
 
         function setupFrontend() {
@@ -202,29 +94,24 @@
             Object.entries(naicsData).forEach(([code, name]) => {
                 naicsSelect.innerHTML += `<option value="${code}">${name} (${code})</option>`;
             });
-
             const employeeSizeSelect = document.getElementById('employee_size_select');
             employeeSizeData.forEach(size => {
                 employeeSizeSelect.innerHTML += `<option value="${size}">${size}</option>`;
             });
             employeeSizeSelect.value = "100-149";
-
             function updateEventSelection() {
                 const selectedNaics = naicsSelect.value;
                 const eventSelectionDiv = document.getElementById('event-selection');
                 eventSelectionDiv.innerHTML = '';
                 let isFirstEvent = true;
-
                 Object.entries(eventData).forEach(([eventCode, eventDetails]) => {
                     if (!eventDetails.naics.includes(selectedNaics)) return;
-
                     const eventItem = document.createElement('div');
                     eventItem.className = 'event-item border-b border-gray-200';
                     let servicesHtml = '';
                     Object.entries(eventDetails.services).forEach(([serviceCode, serviceName]) => {
                         servicesHtml += `<div class="p-2 pl-6"><label class="flex items-center"><input type="checkbox" class="h-4 w-4 rounded border-gray-300 text-blue-600 service-checkbox" data-service-code="${serviceCode}"><span class="ml-2 text-sm text-gray-700">${serviceName}</span></label></div>`;
                     });
-
                     eventItem.innerHTML = `
                         <div class="flex items-center p-2 cursor-pointer accordion-header">
                             <label class="flex items-center font-medium text-gray-800">
@@ -235,20 +122,17 @@
                         </div>
                         <div class="accordion-content bg-gray-50 rounded-b-lg">${servicesHtml}</div>`;
                     eventSelectionDiv.appendChild(eventItem);
-
                     const eventCheckbox = eventItem.querySelector('.event-checkbox');
                     const serviceCheckboxes = eventItem.querySelectorAll('.service-checkbox');
                     eventCheckbox.addEventListener('change', () => {
                         serviceCheckboxes.forEach(cb => cb.checked = eventCheckbox.checked);
                     });
-
                     if (isFirstEvent) {
                         eventCheckbox.checked = true;
                         eventCheckbox.dispatchEvent(new Event('change'));
                         isFirstEvent = false;
                     }
                 });
-
                 document.querySelectorAll('.accordion-header').forEach(header => {
                     header.addEventListener('click', (e) => {
                         if (e.target.type === 'checkbox' || e.target.tagName === 'LABEL' || e.target.parentElement.tagName === 'LABEL') return;
@@ -264,10 +148,8 @@
                     });
                 });
             }
-
             naicsSelect.addEventListener('change', updateEventSelection);
             updateEventSelection();
-
             document.getElementById('run-simulation').addEventListener('click', handleRunSimulation);
             
             const deductibleSlider = document.getElementById('deductible');
@@ -282,6 +164,13 @@
             outlookSlider.addEventListener('input', () => {
                 outlookValueSpan.innerText = outlookLabels[outlookSlider.value];
             });
+
+            // NEW: Event listener for the gross-up slider
+            const grossUpSlider = document.getElementById('gross_up_factor');
+            const grossUpValueSpan = document.getElementById('gross_up_value');
+            grossUpSlider.addEventListener('input', () => {
+                grossUpValueSpan.innerText = grossUpSlider.value;
+            });
         }
 
         async function handleRunSimulation() {
@@ -293,7 +182,8 @@
                 employee_size: document.getElementById('employee_size_select').value,
                 deductible: parseInt(document.getElementById('deductible').value),
                 selected_services: Array.from(document.querySelectorAll('.service-checkbox:checked')).map(cb => cb.dataset.serviceCode),
-                catastrophe_outlook: document.getElementById('catastrophe_outlook').value
+                catastrophe_outlook: document.getElementById('catastrophe_outlook').value,
+                gross_up_percentage: parseInt(document.getElementById('gross_up_factor').value) // NEW
             };
 
             if (requestData.selected_services.length === 0) {
@@ -326,6 +216,7 @@
             }
         }
 
+        // UPDATED: Function to display new results structure
         function displayResults(results) {
             const resultsDiv = document.getElementById('results-summary');
             if (results.error) {
@@ -333,10 +224,14 @@
                 return;
             }
             resultsDiv.innerHTML = `<div class="overflow-x-auto"><table class="min-w-full bg-white border border-gray-200"><thead class="bg-gray-50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Metric</th><th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Value</th></tr></thead><tbody class="bg-white divide-y divide-gray-200">
-            <tr><td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Expected Annual Cost of Remedial Services</td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-800 text-center font-mono">${results.mean_premium}</td></tr>
-            <tr><td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">95th Percentile Annual Cost of Remedial Services</td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-800 text-center font-mono">${results.var_95}</td></tr>
-            <tr><td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">99th Percentile Annual Cost of Remedial Services</td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-800 text-center font-mono">${results.var_99}</td></tr>
-            <tr><td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">99.9th Percentile Annual Cost of Remedial Services</td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-800 text-center font-mono">${results.var_99_9}</td></tr>
+            <tr class="bg-blue-50"><td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-blue-900">Final Premium</td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-800 text-center font-mono font-bold">${results.premium}</td></tr>
+            <tr><td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 pl-10">Pure Premium (Expected Annual Cost)</td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-800 text-center font-mono">${results.pure_premium}</td></tr>
+            <tr><td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 pl-10">Expense Load</td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-800 text-center font-mono">${results.expense_load}</td></tr>
+            <tr><td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 pl-10">Profit Load</td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-800 text-center font-mono">${results.profit_load}</td></tr>
+            <tr><td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Conditional Expected Annual Cost</td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-800 text-center font-mono">${results.conditional_loss}</td></tr>
+            <tr><td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">95th Percentile Annual Cost</td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-800 text-center font-mono">${results.var_95}</td></tr>
+            <tr><td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">99th Percentile Annual Cost</td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-800 text-center font-mono">${results.var_99}</td></tr>
+            <tr><td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">99.9th Percentile Annual Cost</td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-800 text-center font-mono">${results.var_99_9}</td></tr>
             <tr><td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Volatility (CV)</td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-800 text-center font-mono">${results.volatility_cv}</td></tr>
             <tr><td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Worst-Case Multiple of Expectation</td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-800 text-center font-mono">${results.max_to_mean_ratio}</td></tr>
             </tbody></table></div>`;

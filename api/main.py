@@ -143,7 +143,6 @@ NAICS,Event_Code,Service_Code,Event_Freq,Uptake_Prob,Cost
 """
 
 # --- Configuration & Helper Functions ---
-
 EMPLOYEE_SIZE_SCALING_FACTORS = {
     "<5": 0.1, "5-9": 0.2, "10-14": 0.35, "15-19": 0.5, "20-24": 0.65,
     "25-29": 0.8, "30-34": 1.0, "35-39": 1.2, "40-49": 1.5, "50-74": 1.9,
@@ -152,44 +151,23 @@ EMPLOYEE_SIZE_SCALING_FACTORS = {
     "1,000-1,499": 12.0, "1,500-1,999": 14.0, "2,000-2,499": 16.0,
     "2,500-4,999": 18.0, "5,000+": 21.0
 }
-
 CATASTROPHE_PARAMETER_SETS = {
-    "1": { # Optimistic
-        "freq_min": 0.01, "freq_max": 0.04,
-        "shape_min": 3.01, "shape_max": 4.0,
-        "scale_min": 0.40, "scale_max": 0.80,
-        "beta_alpha": 5, "beta_beta": 5
-    },
-    "2": { # Moderate (Default)
-        "freq_min": 0.05, "freq_max": 0.15,
-        "shape_min": 2.5, "shape_max": 3.0,
-        "scale_min": 0.81, "scale_max": 1.00,
-        "beta_alpha": 5, "beta_beta": 5
-    },
-    "3": { # Pessimistic
-        "freq_min": 0.16, "freq_max": 0.25,
-        "shape_min": 2.01, "shape_max": 2.5,
-        "scale_min": 1.01, "scale_max": 1.50,
-        "beta_alpha": 5, "beta_beta": 5
-    }
+    "1": {"freq_min":0.01,"freq_max":0.04,"shape_min":3.01,"shape_max":4.0,"scale_min":0.40,"scale_max":0.80,"beta_alpha":5,"beta_beta":5},
+    "2": {"freq_min":0.05,"freq_max":0.15,"shape_min":2.5,"shape_max":3.0,"scale_min":0.81,"scale_max":1.00,"beta_alpha":5,"beta_beta":5},
+    "3": {"freq_min":0.16,"freq_max":0.25,"shape_min":2.01,"shape_max":2.5,"scale_min":1.01,"scale_max":1.50,"beta_alpha":5,"beta_beta":5}
 }
-
 def sample_catastrophic_load(params):
     freq_beta_sample = np.random.beta(params["beta_alpha"], params["beta_beta"])
     sampled_frequency = params["freq_min"] + freq_beta_sample * (params["freq_max"] - params["freq_min"])
-
     if np.random.binomial(1, sampled_frequency):
         shape_beta_sample = np.random.beta(params["beta_alpha"], params["beta_beta"])
         sampled_shape = params["shape_min"] + shape_beta_sample * (params["shape_max"] - params["shape_min"])
-
         scale_beta_sample = np.random.beta(params["beta_alpha"], params["beta_beta"])
         sampled_scale = params["scale_min"] + scale_beta_sample * (params["scale_max"] - params["scale_min"])
-
         severity_multiplier = (np.random.pareto(a=sampled_shape) + 1) * sampled_scale
         return severity_multiplier
     else:
         return 0.05
-
 def compute_lognormal_params(mean_val, min_val, max_val):
     if pd.isna(mean_val) or mean_val <= 0: return 0, 0
     if min_val < 0: min_val = 0
@@ -205,7 +183,6 @@ def compute_lognormal_params(mean_val, min_val, max_val):
         return mu, sigma
     except (ValueError, ZeroDivisionError, TypeError):
         return np.log(mean_val) if mean_val > 0 else 0, 0.3
-
 def compute_beta_params(mean_val, min_val, max_val):
     if (pd.isna(mean_val) or pd.isna(min_val) or pd.isna(max_val) or
         not (0 <= mean_val <= 1) or min_val >= max_val or (max_val - min_val) < 1e-9):
@@ -234,6 +211,7 @@ def handle_simulation():
     deductible = data.get('deductible')
     selected_services = data.get('selected_services')
     catastrophe_outlook = data.get('catastrophe_outlook', '2')
+    gross_up_percentage = data.get('gross_up_percentage', 55) # NEW
 
     if not all([naics, employee_size, deductible is not None, selected_services]):
         return jsonify({"error": "Missing one or more required parameters"}), 400
@@ -247,9 +225,8 @@ def handle_simulation():
     except (ValueError, TypeError):
         return jsonify({"error": "Invalid NAICS code. Must be a valid integer."}), 400
 
-    N_ITERATIONS = 1000
+    N_ITERATIONS = 10000
     cyber_data = pd.read_csv(StringIO(CYBER_DATA_STRING))
-
     filtered_data = cyber_data[
         (cyber_data['NAICS'] == naics_int) &
         (cyber_data['Service_Code'].isin(selected_services))
@@ -289,21 +266,39 @@ def handle_simulation():
 
     catastrophic_loads = np.array([sample_catastrophic_load(cat_params) for _ in range(N_ITERATIONS)])
     loaded_simulated_loss = simulated_loss_per_firm * (1 + catastrophic_loads)
-    simulated_premium = np.maximum(0, loaded_simulated_loss - int(deductible))
+    simulated_pure_premium_dist = np.maximum(0, loaded_simulated_loss - int(deductible))
 
-    mean_premium = simulated_premium.mean()
-    std_dev_premium = simulated_premium.std(ddof=1)
-    max_premium = simulated_premium.max()
-    cv = (std_dev_premium / mean_premium) if mean_premium > 0 else 0
-    max_mean_ratio = (max_premium / mean_premium) if mean_premium > 0 else 0
+    pure_premium = simulated_pure_premium_dist.mean()
+    std_dev_premium = simulated_pure_premium_dist.std(ddof=1)
+    max_premium = simulated_pure_premium_dist.max()
+    cv = (std_dev_premium / pure_premium) if pure_premium > 0 else 0
+    max_mean_ratio = (max_premium / pure_premium) if pure_premium > 0 else 0
+    
+    # --- NEW CALCULATIONS ---
+    # 1. Premium Gross-Up
+    loss_ratio_factor = gross_up_percentage / 100.0
+    final_premium = pure_premium / loss_ratio_factor if loss_ratio_factor > 0 else pure_premium
+    total_load = final_premium - pure_premium
+    # Assume a 2:1 split for Expense vs. Profit from the total load
+    expense_load = total_load * (2/3)
+    profit_load = total_load * (1/3)
 
-    # --- NEW: Calculate VaR percentiles ---
-    var_95 = np.percentile(simulated_premium, 95)
-    var_99 = np.percentile(simulated_premium, 99)
-    var_99_9 = np.percentile(simulated_premium, 99.9)
+    # 2. Conditional Loss
+    losses_when_event_occurs = simulated_pure_premium_dist[simulated_pure_premium_dist > 0]
+    conditional_loss = losses_when_event_occurs.mean() if len(losses_when_event_occurs) > 0 else 0.0
 
+    # 3. VaR Percentiles
+    var_95 = np.percentile(simulated_pure_premium_dist, 95)
+    var_99 = np.percentile(simulated_pure_premium_dist, 99)
+    var_99_9 = np.percentile(simulated_pure_premium_dist, 99.9)
+
+    # UPDATED results dictionary
     results = {
-        "mean_premium": f"${mean_premium:,.2f}",
+        "premium": f"${final_premium:,.2f}",
+        "pure_premium": f"${pure_premium:,.2f}",
+        "expense_load": f"${expense_load:,.2f}",
+        "profit_load": f"${profit_load:,.2f}",
+        "conditional_loss": f"${conditional_loss:,.2f}",
         "var_95": f"${var_95:,.2f}",
         "var_99": f"${var_99:,.2f}",
         "var_99_9": f"${var_99_9:,.2f}",
