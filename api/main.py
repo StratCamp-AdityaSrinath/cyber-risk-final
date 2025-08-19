@@ -9,7 +9,7 @@ import sys
 app = Flask(__name__)
 CORS(app)
 
-# --- DATA: This is the new, complete data string ---
+# --- DATA: This is the sole source of risk data ---
 CYBER_DATA_STRING = """
 NAICS,Event_Code,Service_Code,Event_Freq,Uptake_Prob,Cost
 51,CM.01,Forensics,0.099875,0.840947,1236194
@@ -118,7 +118,7 @@ NAICS,Event_Code,Service_Code,Event_Freq,Uptake_Prob,Cost
 71,AM.01,Recovery,0.005168,0.936129,7155360
 71,VR.01,Forensics,0.006978,0.816684,1610366
 71,VR.01,Legal Support,0.007430,0.800377,1434268
-71,VR.01,Negotiation,0.007030,0.872976,1194398
+7s71,VR.01,Negotiation,0.007030,0.872976,1194398
 71,VR.01,Recovery,0.008777,0.952551,3803870
 72,IO.01,Forensics,0.035602,0.815525,1227735
 72,IO.01,Legal Support,0.043332,0.869952,1564752
@@ -152,41 +152,9 @@ EMPLOYEE_SIZE_SCALING_FACTORS = {
     "2,500-4,999": 18.0, "5,000+": 21.0
 }
 
-# --- MODIFIED: CATASTROPHE_PARAMETER_SETS ---
-# 1. Added "base_cost" to each set for the additive model.
-# 2. Adjusted Pareto shape parameters ("shape_min", "shape_max") to control tail risk.
-#    - "1" (Low Risk): Higher shape values (less extreme tail).
-#    - "3" (High Risk): Lower shape values (more extreme tail).
-CATASTROPHE_PARAMETER_SETS = {
-    "1": {"freq_min":0.001,"freq_max":0.009,"shape_min":4.0,"shape_max":4.9,"scale_min":0.40,"scale_max":0.80,"beta_alpha":5,"beta_beta":5, "base_cost": 1000000},
-    "2": {"freq_min":0.01,"freq_max":0.05,"shape_min":3.0,"shape_max":3.9,"scale_min":0.81,"scale_max":1.00,"beta_alpha":5,"beta_beta":5, "base_cost": 2500000},
-    "3": {"freq_min":0.051,"freq_max":0.15,"shape_min":2.0,"shape_max":2.9,"scale_min":1.01,"scale_max":1.50,"beta_alpha":5,"beta_beta":5, "base_cost": 5000000}
-}
-
-# --- MODIFIED: sample_catastrophic_load ---
-# This function now calculates and returns a total catastrophic loss value instead of a multiplier.
-# It returns 0 if no catastrophic event occurs in the simulation tick.
-def sample_catastrophic_loss(params):
-    freq_beta_sample = np.random.beta(params["beta_alpha"], params["beta_beta"])
-    sampled_frequency = params["freq_min"] + freq_beta_sample * (params["freq_max"] - params["freq_min"])
-    
-    # Check if a catastrophe occurs in this iteration
-    if np.random.binomial(1, sampled_frequency):
-        # If it does, calculate the severity and the total loss
-        shape_beta_sample = np.random.beta(params["beta_alpha"], params["beta_beta"])
-        sampled_shape = params["shape_min"] + shape_beta_sample * (params["shape_max"] - params["shape_min"])
-        
-        scale_beta_sample = np.random.beta(params["beta_alpha"], params["beta_beta"])
-        sampled_scale = params["scale_min"] + scale_beta_sample * (params["scale_max"] - params["scale_min"])
-        
-        # Calculate severity using Pareto distribution
-        severity_multiplier = (np.random.pareto(a=sampled_shape) + 1) * sampled_scale
-        
-        # Return the absolute loss value (base_cost * multiplier)
-        return params["base_cost"] * severity_multiplier
-    else:
-        # If no catastrophe occurs, return 0 loss
-        return 0.0
+# --- REMOVED: CATASTROPHE_PARAMETER_SETS and sample_catastrophic_loss function ---
+# The logic for catastrophic events is now fully contained within the main simulation
+# driven by the CYBER_DATA_STRING, removing the need for a separate model.
 
 def compute_lognormal_params(mean_val, min_val, max_val):
     if pd.isna(mean_val) or mean_val <= 0: return 0, 0
@@ -231,16 +199,14 @@ def handle_simulation():
     employee_size = data.get('employee_size')
     deductible = data.get('deductible')
     selected_services = data.get('selected_services')
+    # The 'catastrophe_outlook' parameter is no longer used but is kept here
+    # to avoid breaking potential frontend calls. It has no effect on the calculation.
     catastrophe_outlook = data.get('catastrophe_outlook', '2')
     gross_up_percentage = data.get('gross_up_percentage', 55)
 
     if not all([naics, employee_size, deductible is not None, selected_services]):
         return jsonify({"error": "Missing one or more required parameters"}), 400
     
-    cat_params = CATASTROPHE_PARAMETER_SETS.get(str(catastrophe_outlook))
-    if not cat_params:
-        return jsonify({"error": "Invalid catastrophe outlook value."}), 400
-
     try:
         naics_int = int(naics)
     except (ValueError, TypeError):
@@ -285,11 +251,11 @@ def handle_simulation():
         service_loss = n_events * sampled_uptake_prob * sampled_cost
         simulated_loss_per_firm += service_loss
 
-    # --- MODIFIED: Main Simulation Logic ---
-    # 1. Call the new `sample_catastrophic_loss` function.
-    # 2. Add the catastrophic loss to the regular loss instead of multiplying.
-    catastrophic_losses = np.array([sample_catastrophic_loss(cat_params) for _ in range(N_ITERATIONS)])
-    total_simulated_loss = simulated_loss_per_firm + catastrophic_losses
+    # --- CORRECTED: Main Simulation Logic ---
+    # The `simulated_loss_per_firm` array now represents the total simulated loss,
+    # as the data string is the single source of truth for the catastrophic risk.
+    # The secondary catastrophe model has been removed to prevent double counting.
+    total_simulated_loss = simulated_loss_per_firm
     simulated_pure_premium_dist = np.maximum(0, total_simulated_loss - int(deductible))
 
     pure_premium = simulated_pure_premium_dist.mean()
@@ -298,24 +264,20 @@ def handle_simulation():
     cv = (std_dev_premium / pure_premium) if pure_premium > 0 else 0
     max_mean_ratio = (max_premium / pure_premium) if pure_premium > 0 else 0
     
-    # --- CALCULATIONS (Unchanged) ---
-    # 1. Premium Gross-Up
+    # --- Final Calculations (Unchanged) ---
     loss_ratio_factor = gross_up_percentage / 100.0
     final_premium = pure_premium / loss_ratio_factor if loss_ratio_factor > 0 else pure_premium
     total_load = final_premium - pure_premium
     expense_load = total_load * (2/3)
     profit_load = total_load * (1/3)
 
-    # 2. Conditional Loss
     losses_when_event_occurs = simulated_pure_premium_dist[simulated_pure_premium_dist > 0]
     conditional_loss = losses_when_event_occurs.mean() if len(losses_when_event_occurs) > 0 else 0.0
 
-    # 3. VaR Percentiles
     var_95 = np.percentile(simulated_pure_premium_dist, 95)
     var_99 = np.percentile(simulated_pure_premium_dist, 99)
     var_99_9 = np.percentile(simulated_pure_premium_dist, 99.9)
 
-    # UPDATED results dictionary
     results = {
         "premium": f"${final_premium:,.2f}",
         "pure_premium": f"${pure_premium:,.2f}",
