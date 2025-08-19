@@ -151,23 +151,43 @@ EMPLOYEE_SIZE_SCALING_FACTORS = {
     "1,000-1,499": 12.0, "1,500-1,999": 14.0, "2,000-2,499": 16.0,
     "2,500-4,999": 18.0, "5,000+": 21.0
 }
+
+# --- MODIFIED: CATASTROPHE_PARAMETER_SETS ---
+# 1. Added "base_cost" to each set for the additive model.
+# 2. Adjusted Pareto shape parameters ("shape_min", "shape_max") to control tail risk.
+#    - "1" (Low Risk): Higher shape values (less extreme tail).
+#    - "3" (High Risk): Lower shape values (more extreme tail).
 CATASTROPHE_PARAMETER_SETS = {
-    "1": {"freq_min":0.01,"freq_max":0.04,"shape_min":3.01,"shape_max":4.0,"scale_min":0.40,"scale_max":0.80,"beta_alpha":5,"beta_beta":5},
-    "2": {"freq_min":0.05,"freq_max":0.15,"shape_min":2.5,"shape_max":3.0,"scale_min":0.81,"scale_max":1.00,"beta_alpha":5,"beta_beta":5},
-    "3": {"freq_min":0.16,"freq_max":0.25,"shape_min":2.01,"shape_max":2.5,"scale_min":1.01,"scale_max":1.50,"beta_alpha":5,"beta_beta":5}
+    "1": {"freq_min":0.001,"freq_max":0.009,"shape_min":4.0,"shape_max":4.9,"scale_min":0.40,"scale_max":0.80,"beta_alpha":5,"beta_beta":5, "base_cost": 1000000},
+    "2": {"freq_min":0.01,"freq_max":0.05,"shape_min":3.0,"shape_max":3.9,"scale_min":0.81,"scale_max":1.00,"beta_alpha":5,"beta_beta":5, "base_cost": 2500000},
+    "3": {"freq_min":0.051,"freq_max":0.15,"shape_min":2.0,"shape_max":2.9,"scale_min":1.01,"scale_max":1.50,"beta_alpha":5,"beta_beta":5, "base_cost": 5000000}
 }
-def sample_catastrophic_load(params):
+
+# --- MODIFIED: sample_catastrophic_load ---
+# This function now calculates and returns a total catastrophic loss value instead of a multiplier.
+# It returns 0 if no catastrophic event occurs in the simulation tick.
+def sample_catastrophic_loss(params):
     freq_beta_sample = np.random.beta(params["beta_alpha"], params["beta_beta"])
     sampled_frequency = params["freq_min"] + freq_beta_sample * (params["freq_max"] - params["freq_min"])
+    
+    # Check if a catastrophe occurs in this iteration
     if np.random.binomial(1, sampled_frequency):
+        # If it does, calculate the severity and the total loss
         shape_beta_sample = np.random.beta(params["beta_alpha"], params["beta_beta"])
         sampled_shape = params["shape_min"] + shape_beta_sample * (params["shape_max"] - params["shape_min"])
+        
         scale_beta_sample = np.random.beta(params["beta_alpha"], params["beta_beta"])
         sampled_scale = params["scale_min"] + scale_beta_sample * (params["scale_max"] - params["scale_min"])
+        
+        # Calculate severity using Pareto distribution
         severity_multiplier = (np.random.pareto(a=sampled_shape) + 1) * sampled_scale
-        return severity_multiplier
+        
+        # Return the absolute loss value (base_cost * multiplier)
+        return params["base_cost"] * severity_multiplier
     else:
-        return 0.05
+        # If no catastrophe occurs, return 0 loss
+        return 0.0
+
 def compute_lognormal_params(mean_val, min_val, max_val):
     if pd.isna(mean_val) or mean_val <= 0: return 0, 0
     if min_val < 0: min_val = 0
@@ -183,6 +203,7 @@ def compute_lognormal_params(mean_val, min_val, max_val):
         return mu, sigma
     except (ValueError, ZeroDivisionError, TypeError):
         return np.log(mean_val) if mean_val > 0 else 0, 0.3
+
 def compute_beta_params(mean_val, min_val, max_val):
     if (pd.isna(mean_val) or pd.isna(min_val) or pd.isna(max_val) or
         not (0 <= mean_val <= 1) or min_val >= max_val or (max_val - min_val) < 1e-9):
@@ -211,7 +232,7 @@ def handle_simulation():
     deductible = data.get('deductible')
     selected_services = data.get('selected_services')
     catastrophe_outlook = data.get('catastrophe_outlook', '2')
-    gross_up_percentage = data.get('gross_up_percentage', 55) # NEW
+    gross_up_percentage = data.get('gross_up_percentage', 55)
 
     if not all([naics, employee_size, deductible is not None, selected_services]):
         return jsonify({"error": "Missing one or more required parameters"}), 400
@@ -264,9 +285,12 @@ def handle_simulation():
         service_loss = n_events * sampled_uptake_prob * sampled_cost
         simulated_loss_per_firm += service_loss
 
-    catastrophic_loads = np.array([sample_catastrophic_load(cat_params) for _ in range(N_ITERATIONS)])
-    loaded_simulated_loss = simulated_loss_per_firm * (1 + catastrophic_loads)
-    simulated_pure_premium_dist = np.maximum(0, loaded_simulated_loss - int(deductible))
+    # --- MODIFIED: Main Simulation Logic ---
+    # 1. Call the new `sample_catastrophic_loss` function.
+    # 2. Add the catastrophic loss to the regular loss instead of multiplying.
+    catastrophic_losses = np.array([sample_catastrophic_loss(cat_params) for _ in range(N_ITERATIONS)])
+    total_simulated_loss = simulated_loss_per_firm + catastrophic_losses
+    simulated_pure_premium_dist = np.maximum(0, total_simulated_loss - int(deductible))
 
     pure_premium = simulated_pure_premium_dist.mean()
     std_dev_premium = simulated_pure_premium_dist.std(ddof=1)
@@ -274,12 +298,11 @@ def handle_simulation():
     cv = (std_dev_premium / pure_premium) if pure_premium > 0 else 0
     max_mean_ratio = (max_premium / pure_premium) if pure_premium > 0 else 0
     
-    # --- NEW CALCULATIONS ---
+    # --- CALCULATIONS (Unchanged) ---
     # 1. Premium Gross-Up
     loss_ratio_factor = gross_up_percentage / 100.0
     final_premium = pure_premium / loss_ratio_factor if loss_ratio_factor > 0 else pure_premium
     total_load = final_premium - pure_premium
-    # Assume a 2:1 split for Expense vs. Profit from the total load
     expense_load = total_load * (2/3)
     profit_load = total_load * (1/3)
 
