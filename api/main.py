@@ -155,13 +155,13 @@ EMPLOYEE_SIZE_SCALING_FACTORS = {
 
 CATASTROPHE_PARAMETER_SETS = {
     "1": { # Optimistic
-        "freq_min": 0.03, "freq_max": 0.08,
+        "freq_min": 0.01, "freq_max": 0.04,
         "shape_min": 3.01, "shape_max": 4.0,
         "scale_min": 0.40, "scale_max": 0.80,
         "beta_alpha": 5, "beta_beta": 5
     },
     "2": { # Moderate (Default)
-        "freq_min": 0.09, "freq_max": 0.15,
+        "freq_min": 0.05, "freq_max": 0.15,
         "shape_min": 2.5, "shape_max": 3.0,
         "scale_min": 0.81, "scale_max": 1.00,
         "beta_alpha": 5, "beta_beta": 5
