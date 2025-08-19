@@ -153,7 +153,6 @@ EMPLOYEE_SIZE_SCALING_FACTORS = {
     "2,500-4,999": 18.0, "5,000+": 21.0
 }
 
-# --- NEW: Define parameter sets for different catastrophe outlooks ---
 CATASTROPHE_PARAMETER_SETS = {
     "1": { # Optimistic
         "freq_min": 0.03, "freq_max": 0.08,
@@ -169,26 +168,20 @@ CATASTROPHE_PARAMETER_SETS = {
     },
     "3": { # Pessimistic
         "freq_min": 0.16, "freq_max": 0.25,
-        "shape_min": 2.01, "shape_max": 2.5, # Shape min is closer to 2.0 for a fatter tail
+        "shape_min": 2.01, "shape_max": 2.5,
         "scale_min": 1.01, "scale_max": 1.50,
         "beta_alpha": 5, "beta_beta": 5
     }
 }
 
 def sample_catastrophic_load(params):
-    """
-    Generate catastrophic loading based on a selected parameter set.
-    """
-    # 1. Sample this year's catastrophe FREQUENCY
     freq_beta_sample = np.random.beta(params["beta_alpha"], params["beta_beta"])
     sampled_frequency = params["freq_min"] + freq_beta_sample * (params["freq_max"] - params["freq_min"])
 
     if np.random.binomial(1, sampled_frequency):
-        # 2. Sample this event's SHAPE parameter
         shape_beta_sample = np.random.beta(params["beta_alpha"], params["beta_beta"])
         sampled_shape = params["shape_min"] + shape_beta_sample * (params["shape_max"] - params["shape_min"])
 
-        # 3. Sample this event's SCALE parameter
         scale_beta_sample = np.random.beta(params["beta_alpha"], params["beta_beta"])
         sampled_scale = params["scale_min"] + scale_beta_sample * (params["scale_max"] - params["scale_min"])
 
@@ -236,21 +229,18 @@ def handle_simulation():
     if not data:
         return jsonify({"error": "Invalid request. Please send a JSON body."}), 400
 
-    # --- MODIFIED: Receive and validate the new outlook parameter ---
     naics = data.get('naics')
     employee_size = data.get('employee_size')
     deductible = data.get('deductible')
     selected_services = data.get('selected_services')
-    catastrophe_outlook = data.get('catastrophe_outlook', '2') # Default to '2' (Moderate)
+    catastrophe_outlook = data.get('catastrophe_outlook', '2')
 
     if not all([naics, employee_size, deductible is not None, selected_services]):
         return jsonify({"error": "Missing one or more required parameters"}), 400
     
-    # Select the correct parameter set based on user input
     cat_params = CATASTROPHE_PARAMETER_SETS.get(str(catastrophe_outlook))
     if not cat_params:
         return jsonify({"error": "Invalid catastrophe outlook value."}), 400
-    # --- END MODIFIED ---
 
     try:
         naics_int = int(naics)
@@ -307,14 +297,20 @@ def handle_simulation():
     cv = (std_dev_premium / mean_premium) if mean_premium > 0 else 0
     max_mean_ratio = (max_premium / mean_premium) if mean_premium > 0 else 0
 
+    # --- NEW: Calculate VaR percentiles ---
+    var_95 = np.percentile(simulated_premium, 95)
+    var_99 = np.percentile(simulated_premium, 99)
+    var_99_9 = np.percentile(simulated_premium, 99.9)
+
     results = {
         "mean_premium": f"${mean_premium:,.2f}",
+        "var_95": f"${var_95:,.2f}",
+        "var_99": f"${var_99:,.2f}",
+        "var_99_9": f"${var_99_9:,.2f}",
         "volatility_cv": f"{cv:.1%}",
         "max_to_mean_ratio": f"{max_mean_ratio:.2f}x"
     }
     return jsonify(results)
 
-# This is required to run the Flask app
 if __name__ == '__main__':
-    # Note: For production, use a proper WSGI server like Gunicorn or uWSGI
     app.run(debug=True)
