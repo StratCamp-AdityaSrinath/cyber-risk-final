@@ -142,6 +142,8 @@ NAICS,Event_Code,Service_Code,Event_Freq,Uptake_Prob,Cost
 92,BD.01,Recovery,0.006246,0.975828,6111013
 """
 
+# --- Configuration & Helper Functions ---
+
 EMPLOYEE_SIZE_SCALING_FACTORS = {
     "<5": 0.1, "5-9": 0.2, "10-14": 0.35, "15-19": 0.5, "20-24": 0.65,
     "25-29": 0.8, "30-34": 1.0, "35-39": 1.2, "40-49": 1.5, "50-74": 1.9,
@@ -151,14 +153,49 @@ EMPLOYEE_SIZE_SCALING_FACTORS = {
     "2,500-4,999": 18.0, "5,000+": 21.0
 }
 
-CATASTROPHIC_FREQUENCY = 0.15
-CATASTROPHIC_SEVERITY_SHAPE = 1.6
-CATASTROPHIC_SEVERITY_SCALE = 0.75
+# --- NEW: Define parameter sets for different catastrophe outlooks ---
+CATASTROPHE_PARAMETER_SETS = {
+    "1": { # Optimistic
+        "freq_min": 0.03, "freq_max": 0.08,
+        "shape_min": 2.5, "shape_max": 4.0,
+        "scale_min": 0.40, "scale_max": 0.80,
+        "beta_alpha": 5, "beta_beta": 5
+    },
+    "2": { # Moderate (Default)
+        "freq_min": 0.05, "freq_max": 0.15,
+        "shape_min": 2.1, "shape_max": 3.5,
+        "scale_min": 0.50, "scale_max": 1.00,
+        "beta_alpha": 5, "beta_beta": 5
+    },
+    "3": { # Pessimistic
+        "freq_min": 0.10, "freq_max": 0.20,
+        "shape_min": 2.01, "shape_max": 3.0, # Shape min is closer to 2.0 for a fatter tail
+        "scale_min": 0.75, "scale_max": 1.25,
+        "beta_alpha": 5, "beta_beta": 5
+    }
+}
 
-def sample_catastrophic_load():
-    if np.random.binomial(1, CATASTROPHIC_FREQUENCY):
-        return (np.random.pareto(a=CATASTROPHIC_SEVERITY_SHAPE) + 1) * CATASTROPHIC_SEVERITY_SCALE
-    return 0.05
+def sample_catastrophic_load(params):
+    """
+    Generate catastrophic loading based on a selected parameter set.
+    """
+    # 1. Sample this year's catastrophe FREQUENCY
+    freq_beta_sample = np.random.beta(params["beta_alpha"], params["beta_beta"])
+    sampled_frequency = params["freq_min"] + freq_beta_sample * (params["freq_max"] - params["freq_min"])
+
+    if np.random.binomial(1, sampled_frequency):
+        # 2. Sample this event's SHAPE parameter
+        shape_beta_sample = np.random.beta(params["beta_alpha"], params["beta_beta"])
+        sampled_shape = params["shape_min"] + shape_beta_sample * (params["shape_max"] - params["shape_min"])
+
+        # 3. Sample this event's SCALE parameter
+        scale_beta_sample = np.random.beta(params["beta_alpha"], params["beta_beta"])
+        sampled_scale = params["scale_min"] + scale_beta_sample * (params["scale_max"] - params["scale_min"])
+
+        severity_multiplier = (np.random.pareto(a=sampled_shape) + 1) * sampled_scale
+        return severity_multiplier
+    else:
+        return 0.05
 
 def compute_lognormal_params(mean_val, min_val, max_val):
     if pd.isna(mean_val) or mean_val <= 0: return 0, 0
@@ -181,9 +218,9 @@ def compute_beta_params(mean_val, min_val, max_val):
         not (0 <= mean_val <= 1) or min_val >= max_val or (max_val - min_val) < 1e-9):
         return 2.0, 2.0
     mean_val = np.clip(mean_val, min_val, max_val)
-    mean_normalized = (mean_val - min_val) / (max_val - min_val)
-    if not (0 < mean_normalized < 1):
+    if not (min_val < mean_val < max_val):
         return 2.0, 2.0
+    mean_normalized = (mean_val - min_val) / (max_val - min_val)
     variance_of_standard_beta = max((mean_normalized * (1 - mean_normalized))/6, 0.01)
     nu = (mean_normalized * (1 - mean_normalized) / variance_of_standard_beta) - 1
     if nu <= 0: return 2.0, 2.0
@@ -192,22 +229,31 @@ def compute_beta_params(mean_val, min_val, max_val):
     alpha = max(alpha, 0.5); beta = max(beta, 0.5)
     return alpha, beta
 
+# --- API Endpoint ---
 @app.route('/api/main', methods=['POST'])
 def handle_simulation():
     data = request.get_json()
     if not data:
         return jsonify({"error": "Invalid request. Please send a JSON body."}), 400
 
+    # --- MODIFIED: Receive and validate the new outlook parameter ---
     naics = data.get('naics')
     employee_size = data.get('employee_size')
     deductible = data.get('deductible')
     selected_services = data.get('selected_services')
+    catastrophe_outlook = data.get('catastrophe_outlook', '2') # Default to '2' (Moderate)
 
     if not all([naics, employee_size, deductible is not None, selected_services]):
         return jsonify({"error": "Missing one or more required parameters"}), 400
+    
+    # Select the correct parameter set based on user input
+    cat_params = CATASTROPHE_PARAMETER_SETS.get(str(catastrophe_outlook))
+    if not cat_params:
+        return jsonify({"error": "Invalid catastrophe outlook value."}), 400
+    # --- END MODIFIED ---
 
     try:
-        naics_int = int(naics)  # Convert naics to integer safely
+        naics_int = int(naics)
     except (ValueError, TypeError):
         return jsonify({"error": "Invalid NAICS code. Must be a valid integer."}), 400
 
@@ -234,7 +280,6 @@ def handle_simulation():
             filtered_data[f'{metric}_mu'] = params[:, 0]
             filtered_data[f'{metric}_sigma'] = params[:, 1]
 
-    # Fix: Compute beta parameters for Uptake_Prob explicitly
     beta_params = np.array([compute_beta_params(r['Uptake_Prob'], r['Uptake_Prob_Min'], r['Uptake_Prob_Max']) for _, r in filtered_data.iterrows()])
     if beta_params.size > 0:
         filtered_data['Uptake_Prob_alpha'] = beta_params[:, 0]
@@ -252,7 +297,7 @@ def handle_simulation():
         service_loss = n_events * sampled_uptake_prob * sampled_cost
         simulated_loss_per_firm += service_loss
 
-    catastrophic_loads = np.array([sample_catastrophic_load() for _ in range(N_ITERATIONS)])
+    catastrophic_loads = np.array([sample_catastrophic_load(cat_params) for _ in range(N_ITERATIONS)])
     loaded_simulated_loss = simulated_loss_per_firm * (1 + catastrophic_loads)
     simulated_premium = np.maximum(0, loaded_simulated_loss - int(deductible))
 
@@ -268,3 +313,8 @@ def handle_simulation():
         "max_to_mean_ratio": f"{max_mean_ratio:.2f}x"
     }
     return jsonify(results)
+
+# This is required to run the Flask app
+if __name__ == '__main__':
+    # Note: For production, use a proper WSGI server like Gunicorn or uWSGI
+    app.run(debug=True)
