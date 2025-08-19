@@ -36,6 +36,12 @@
                         <label for="deductible" class="block text-lg font-semibold text-gray-700">Per-Business Deductible ($<span id="deductible_value">50,000</span>)</label>
                         <input type="range" id="deductible" min="0" max="250000" step="25000" value="50000" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
                     </div>
+
+                    <div>
+                        <label for="catastrophe_outlook" class="block text-lg font-semibold text-gray-700">Catastrophe Outlook (<span id="catastrophe_outlook_value">2</span>)</label>
+                        <input type="range" id="catastrophe_outlook" min="1" max="3" step="1" value="2" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+                    </div>
+                    
                 </div>
 
                 <div class="mt-8">
@@ -263,27 +269,41 @@
             updateEventSelection();
 
             document.getElementById('run-simulation').addEventListener('click', handleRunSimulation);
+            
             const deductibleSlider = document.getElementById('deductible');
             const deductibleValueSpan = document.getElementById('deductible_value');
             deductibleSlider.addEventListener('input', () => {
                 deductibleValueSpan.innerText = parseInt(deductibleSlider.value).toLocaleString();
+            });
+
+            // NEW: Event listener for the Catastrophe Outlook slider
+            const outlookSlider = document.getElementById('catastrophe_outlook');
+            const outlookValueSpan = document.getElementById('catastrophe_outlook_value');
+            const outlookLabels = {1: "Optimistic", 2: "Moderate", 3: "Pessimistic"};
+            outlookSlider.addEventListener('input', () => {
+                outlookValueSpan.innerText = outlookLabels[outlookSlider.value];
             });
         }
 
         async function handleRunSimulation() {
             document.getElementById('loader-container').classList.remove('hidden');
             document.getElementById('results-summary').innerHTML = "";
+            
+            // MODIFIED: Added catastrophe_outlook to the request
             const requestData = {
                 naics: document.getElementById('naics_select').value,
                 employee_size: document.getElementById('employee_size_select').value,
                 deductible: parseInt(document.getElementById('deductible').value),
-                selected_services: Array.from(document.querySelectorAll('.service-checkbox:checked')).map(cb => cb.dataset.serviceCode)
+                selected_services: Array.from(document.querySelectorAll('.service-checkbox:checked')).map(cb => cb.dataset.serviceCode),
+                catastrophe_outlook: document.getElementById('catastrophe_outlook').value
             };
+
             if (requestData.selected_services.length === 0) {
                 displayError("Please select at least one remedial service.");
                 return;
             }
             try {
+                // IMPORTANT: Replace '/api/main' with your actual backend API endpoint URL
                 const response = await fetch('/api/main', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -295,7 +315,8 @@
                         const errorData = await response.json();
                         errorMsg = errorData.error || `HTTP error! status: ${response.status}`;
                     } catch (e) {
-                        errorMsg = `The server returned an invalid response (Not Found). Please ensure the API is running correctly.`;
+                        // Handle cases where the server is down or returns non-JSON error
+                        errorMsg = `The server returned an invalid response (e.g., Not Found). Please ensure the API is running correctly.`;
                     }
                     throw new Error(errorMsg);
                 }
