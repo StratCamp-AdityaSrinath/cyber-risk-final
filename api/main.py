@@ -9,7 +9,7 @@ import sys
 app = Flask(__name__)
 CORS(app)
 
-# --- DATA: This is the sole source of risk data ---
+# --- DATA: This is the new, complete data string ---
 CYBER_DATA_STRING = """
 NAICS,Event_Code,Service_Code,Event_Freq,Uptake_Prob,Cost
 51,CM.01,Forensics,0.099875,0.840947,1236194
@@ -118,7 +118,7 @@ NAICS,Event_Code,Service_Code,Event_Freq,Uptake_Prob,Cost
 71,AM.01,Recovery,0.005168,0.936129,7155360
 71,VR.01,Forensics,0.006978,0.816684,1610366
 71,VR.01,Legal Support,0.007430,0.800377,1434268
-7s71,VR.01,Negotiation,0.007030,0.872976,1194398
+71,VR.01,Negotiation,0.007030,0.872976,1194398
 71,VR.01,Recovery,0.008777,0.952551,3803870
 72,IO.01,Forensics,0.035602,0.815525,1227735
 72,IO.01,Legal Support,0.043332,0.869952,1564752
