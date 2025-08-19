@@ -157,20 +157,20 @@ EMPLOYEE_SIZE_SCALING_FACTORS = {
 CATASTROPHE_PARAMETER_SETS = {
     "1": { # Optimistic
         "freq_min": 0.03, "freq_max": 0.08,
-        "shape_min": 2.5, "shape_max": 4.0,
+        "shape_min": 3.01, "shape_max": 4.0,
         "scale_min": 0.40, "scale_max": 0.80,
         "beta_alpha": 5, "beta_beta": 5
     },
     "2": { # Moderate (Default)
-        "freq_min": 0.05, "freq_max": 0.15,
-        "shape_min": 2.1, "shape_max": 3.5,
-        "scale_min": 0.50, "scale_max": 1.00,
+        "freq_min": 0.09, "freq_max": 0.15,
+        "shape_min": 2.5, "shape_max": 3.0,
+        "scale_min": 0.81, "scale_max": 1.00,
         "beta_alpha": 5, "beta_beta": 5
     },
     "3": { # Pessimistic
-        "freq_min": 0.10, "freq_max": 0.20,
-        "shape_min": 2.01, "shape_max": 3.0, # Shape min is closer to 2.0 for a fatter tail
-        "scale_min": 0.75, "scale_max": 1.25,
+        "freq_min": 0.16, "freq_max": 0.25,
+        "shape_min": 2.01, "shape_max": 2.5, # Shape min is closer to 2.0 for a fatter tail
+        "scale_min": 1.01, "scale_max": 1.50,
         "beta_alpha": 5, "beta_beta": 5
     }
 }
