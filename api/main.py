@@ -278,11 +278,16 @@ def handle_simulation():
     var_99 = np.percentile(simulated_pure_premium_dist, 99)
     var_99_9 = np.percentile(simulated_pure_premium_dist, 99.9)
 
+    # --- NEW: Calculate Rate per $1M Coverage ---
+    # Using VaR 99.9 as a proxy for the coverage limit.
+    rate_per_million = (final_premium / var_99_9) * 1000000 if var_99_9 > 0 else 0
+
     results = {
         "premium": f"${final_premium:,.2f}",
         "pure_premium": f"${pure_premium:,.2f}",
         "expense_load": f"${expense_load:,.2f}",
         "profit_load": f"${profit_load:,.2f}",
+        "rate_per_million": f"${rate_per_million:,.2f}",
         "conditional_loss": f"${conditional_loss:,.2f}",
         "var_95": f"${var_95:,.2f}",
         "var_99": f"${var_99:,.2f}",
